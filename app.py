@@ -1,24 +1,35 @@
 import json
+import os
 import random
 import time
- 
+
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
- 
+
 # ---------- Setup ----------
 load_dotenv()
-client = genai.Client(http_options=types.HttpOptions(timeout=120000))
 MODEL = "gemini-3.5-flash"
- 
+
+
+def get_api_key():
+    # On your Mac: read from .env. Online: read from Streamlit Secrets.
+    key = os.getenv("GOOGLE_API_KEY")
+    if not key:
+        try:
+            key = st.secrets["GOOGLE_API_KEY"]
+        except Exception:
+            key = None
+    return key
+
 ROAST_LEVELS = {
     "Gentle 🧸": "Be warm, encouraging and lightly playful, like a supportive best friend.",
     "Honest 😏": "Be witty and cheeky, with playful teasing, like a funny friend who tells the truth.",
     "Savage 🔥": "Be a hilarious, savage roast comic. Roast the RESUME hard, never the person's identity, "
                  "looks or background. Keep it clean, clever and ultimately helpful.",
 }
- 
+
 LOADING_LINES = [
     "Swiping through your bullet points... 👆",
     "Asking the job description if it's ready for commitment... 💍",
@@ -27,7 +38,7 @@ LOADING_LINES = [
     "Counting how many times you wrote 'synergy'... 🤝",
     "Running a background check on your buzzwords... 🕵️‍♀️",
 ]
- 
+
 VERDICTS = [
     (90, "💍 SOULMATES", "Book the venue. This resume and this job were made for each other."),
     (75, "💕 STRONG CHEMISTRY", "There's definitely a spark. A few tweaks and it's official."),
@@ -35,15 +46,15 @@ VERDICTS = [
     (25, "🙃 JUST FRIENDS", "The job likes you... as a friend. Time for a glow-up."),
     (0, "💔 LEFT-SWIPED", "Oof. This job ghosted you before the first message."),
 ]
- 
- 
+
+
 def get_verdict(score):
     for minimum, title, line in VERDICTS:
         if score >= minimum:
             return title, line
     return VERDICTS[-1][1], VERDICTS[-1][2]
- 
- 
+
+
 # ---------- The AI part ----------
 def match_resume(resume, job_description, roast_level):
     prompt = (
@@ -66,24 +77,31 @@ def match_resume(resume, job_description, roast_level):
         f"RESUME:\n{resume}\n\n"
         f"JOB DESCRIPTION:\n{job_description}\n"
     )
- for attempt in range(3):
-  try:
-   response = client.models.generate_content(
-    model=MODEL,
-    contents=prompt,
-    config=types.GenerateContentConfig(response_mime_type="application/json"),
-       )
-   return json.loads(response.text)
-  except Exception as error:
-   temporary = any(code in str(error) for code in ["504", "503", "DEADLINE", "UNAVAILABLE"])
-   if attempt == 2 or not temporary:
-    raise
-    time.sleep(3 * (attempt + 1))
- 
- 
+
+    api_key = get_api_key()
+    if not api_key:
+        raise ValueError("No API key found. Add GOOGLE_API_KEY to .env (on your Mac) or to Secrets (online).")
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=120000))
+
+    # Try up to 3 times if Gemini is busy or slow (errors 503 / 504)
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            return json.loads(response.text)
+        except Exception as error:
+            temporary = any(code in str(error) for code in ["504", "503", "DEADLINE", "UNAVAILABLE"])
+            if attempt == 2 or not temporary:
+                raise
+            time.sleep(3 * (attempt + 1))
+
+
 # ---------- The page ----------
 st.set_page_config(page_title="Resume Matchmaker", page_icon="💘", layout="wide")
- 
+
 st.markdown(
     """
     <style>
@@ -108,20 +126,20 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
- 
+
 st.markdown('<p class="big-title">💘 Resume Matchmaker</p>', unsafe_allow_html=True)
 st.markdown(
     '<p class="subtitle">Is your resume their type? Let Cupid the Recruiter decide. 🏹</p>',
     unsafe_allow_html=True,
 )
- 
+
 with st.sidebar:
     st.header("⚙️ Settings")
     roast_level = st.radio("Roast level", list(ROAST_LEVELS.keys()), index=1)
     st.caption("Gentle for your feelings. Savage for your friends. 😈")
     st.divider()
     st.caption("Made with 💖, Python and questionable jokes by Hema.")
- 
+
 col1, col2 = st.columns(2)
 with col1:
     resume = st.text_area(
@@ -135,7 +153,7 @@ with col2:
         height=320,
         placeholder="Paste the job you're pining for...",
     )
- 
+
 if st.button("💘 Find out if it's a match", type="primary", use_container_width=True):
     if not resume.strip() or not job_description.strip():
         st.warning("It takes two to tango 💃🕺 Paste both your resume AND the job description.")
@@ -146,10 +164,10 @@ if st.button("💘 Find out if it's a match", type="primary", use_container_widt
             except Exception as error:
                 st.error(f"Cupid tripped over his own arrow 🏹💥 Error: {error}")
                 st.stop()
- 
+
         score = min(max(int(result.get("match_score", 0)), 0), 100)
         title, line = get_verdict(score)
- 
+
         st.markdown(
             f"""
             <div class="verdict-card">
@@ -161,16 +179,16 @@ if st.button("💘 Find out if it's a match", type="primary", use_container_widt
             unsafe_allow_html=True,
         )
         st.progress(score / 100)
- 
+
         if score >= 90:
             st.balloons()
         elif score < 25:
             st.snow()
- 
+
         st.subheader("🗣️ Cupid says")
         st.markdown(f"**{result.get('one_liner', '')}**")
         st.write(result.get("summary", ""))
- 
+
         left, right = st.columns(2)
         with left:
             st.markdown("### 💚 What you have in common")
@@ -180,14 +198,13 @@ if st.button("💘 Find out if it's a match", type="primary", use_container_widt
             st.markdown("### 🚩 Red flags (missing keywords)")
             for keyword in result.get("missing_keywords", []):
                 st.markdown(f"- {keyword}")
- 
+
         st.markdown("### 💅 Glow-up tips")
         for tip in result.get("suggestions", []):
             st.markdown(f"- {tip}")
- 
+
         st.markdown("### 😘 Your official pickup line")
         st.markdown(
             f'<div class="pickup">"{result.get("pickup_line", "")}"</div>',
             unsafe_allow_html=True,
         )
- 
