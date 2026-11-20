@@ -1,5 +1,6 @@
 import json
 import random
+import time
  
 import streamlit as st
 from dotenv import load_dotenv
@@ -8,7 +9,7 @@ from google.genai import types
  
 # ---------- Setup ----------
 load_dotenv()
-client = genai.Client(http_options=types.HttpOptions(timeout=60000))
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))
 MODEL = "gemini-3.5-flash"
  
 ROAST_LEVELS = {
@@ -66,12 +67,19 @@ def match_resume(resume, job_description, roast_level):
         f"JOB DESCRIPTION:\n{job_description}\n"
     )
  
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
-    return json.loads(response.text)
+        for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            return json.loads(response.text)
+        except Exception as error:
+            temporary = any(code in str(error) for code in ["504", "503", "DEADLINE", "UNAVAILABLE"])
+            if attempt == 2 or not temporary:
+                raise
+            time.sleep(3 * (attempt + 1))
  
  
 # ---------- The page ----------
