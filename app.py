@@ -66,20 +66,19 @@ def match_resume(resume, job_description, roast_level):
         f"RESUME:\n{resume}\n\n"
         f"JOB DESCRIPTION:\n{job_description}\n"
     )
- 
-    for attempt in range(3):
-    try:
-     response = client.models.generate_content(
-     model=MODEL,
-     contents=prompt,
-     config=types.GenerateContentConfig(response_mime_type="application/json"),
+ for attempt in range(3):
+  try:
+   response = client.models.generate_content(
+    model=MODEL,
+    contents=prompt,
+    config=types.GenerateContentConfig(response_mime_type="application/json"),
        )
-     return json.loads(response.text)
-    except Exception as error:
-     temporary = any(code in str(error) for code in ["504", "503", "DEADLINE", "UNAVAILABLE"])
-     if attempt == 2 or not temporary:
-      raise
-      time.sleep(3 * (attempt + 1))
+   return json.loads(response.text)
+  except Exception as error:
+   temporary = any(code in str(error) for code in ["504", "503", "DEADLINE", "UNAVAILABLE"])
+   if attempt == 2 or not temporary:
+    raise
+    time.sleep(3 * (attempt + 1))
  
  
 # ---------- The page ----------
